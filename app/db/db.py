@@ -1,16 +1,30 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Boolean, JSON
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    ForeignKey,
+    Boolean,
+    JSON,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from pgvector.sqlalchemy import Vector
 from datetime import datetime
 import uuid
+import os
+import requests
 
 Base = declarative_base()
 
 
 class Visitor(Base):
     """Таблица анонимных посетителей"""
-    __tablename__ = 'visitors'
-    
+
+    __tablename__ = "visitors"
+
     id = Column(Integer, primary_key=True)
     visitor_id = Column(String(100), unique=True, nullable=False)
     ip_address = Column(String(50))
@@ -19,30 +33,36 @@ class Visitor(Base):
     browser = Column(String(100))
     first_visit = Column(DateTime, default=datetime.utcnow)
     last_visit = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    sessions = relationship("Session", back_populates="visitor", cascade="all, delete-orphan")
+
+    sessions = relationship(
+        "Session", back_populates="visitor", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
     """Таблица зарегистрированных пользователей"""
-    __tablename__ = 'users'
-    
+
+    __tablename__ = "users"
+
     id = Column(Integer, primary_key=True)
     username = Column(String(100), unique=True, nullable=False)
     email = Column(String(255), unique=True)
     phone = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+
+    sessions = relationship(
+        "Session", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Session(Base):
     """Таблица сессий разговоров"""
-    __tablename__ = 'sessions'
-    
+
+    __tablename__ = "sessions"
+
     id = Column(Integer, primary_key=True)
-    visitor_id = Column(Integer, ForeignKey('visitors.id'))
-    user_id = Column(Integer, ForeignKey('users.id'))
+    visitor_id = Column(Integer, ForeignKey("visitors.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
     session_uuid = Column(String(100), unique=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(255))
     page_url = Column(String(500))
@@ -51,35 +71,40 @@ class Session(Base):
     ended_at = Column(DateTime)
     is_active = Column(Boolean, default=True)
     satisfaction_rating = Column(Integer)
-    
+
     visitor = relationship("Visitor", back_populates="sessions")
     user = relationship("User", back_populates="sessions")
-    messages = relationship("Message", back_populates="session", cascade="all, delete-orphan")
+    messages = relationship(
+        "Message", back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class Message(Base):
     """Таблица сообщений"""
-    __tablename__ = 'messages'
-    
+
+    __tablename__ = "messages"
+
     id = Column(Integer, primary_key=True)
-    session_id = Column(Integer, ForeignKey('sessions.id'), nullable=False)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
     role = Column(String(50), nullable=False)
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     tokens_used = Column(Integer)
-    
+
     session = relationship("Session", back_populates="messages")
 
 
 class KnowledgeBase(Base):
     """База знаний (FAQ)"""
-    __tablename__ = 'knowledge_base'
-    
+
+    __tablename__ = "knowledge_base"
+
     id = Column(Integer, primary_key=True)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
     category = Column(String(100))
     keywords = Column(Text)
+    embedding = Column(Vector(1024))  # DeepSeek jina-embeddings-v3 = 1024 измерений
     priority = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     views_count = Column(Integer, default=0)
@@ -90,8 +115,9 @@ class KnowledgeBase(Base):
 
 class ChatWidget(Base):
     """Настройки виджета чата"""
-    __tablename__ = 'chat_widget'
-    
+
+    __tablename__ = "chat_widget"
+
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
     welcome_message = Column(Text, default="Здравствуйте! Чем могу помочь?")
@@ -110,8 +136,9 @@ class ChatWidget(Base):
 
 class Context(Base):
     """Контекст и настройки агента"""
-    __tablename__ = 'context'
-    
+
+    __tablename__ = "context"
+
     id = Column(Integer, primary_key=True)
     key = Column(String(255), unique=True, nullable=False)
     value = Column(Text)
@@ -122,41 +149,60 @@ class Context(Base):
 
 class Database:
     """Класс для работы с базой данных"""
-    
-    def __init__(self, db_url='postgresql://user:password@localhost:5432/web_assistant'):
+
+    def __init__(
+        self, db_url="postgresql://user:password@localhost:5432/web_assistant"
+    ):
         self.engine = create_engine(db_url, echo=False)
         self.Session = sessionmaker(bind=self.engine)
-        
+        self.deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
+        self.deepseek_api_url = "https://api.deepseek.com/v1/embeddings"
+
     def create_tables(self):
         """Создать все таблицы"""
+        # Создать расширение pgvector если его нет
+        with self.engine.connect() as conn:
+            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            conn.commit()
         Base.metadata.create_all(self.engine)
-        
+
     def drop_tables(self):
         """Удалить все таблицы"""
         Base.metadata.drop_all(self.engine)
-        
+
     def get_session(self):
         """Получить сессию БД"""
         return self.Session()
-    
-    def create_or_get_visitor(self, visitor_id=None, ip_address=None, user_agent=None, device_type=None, browser=None):
+
+    def create_or_get_visitor(
+        self,
+        visitor_id=None,
+        ip_address=None,
+        user_agent=None,
+        device_type=None,
+        browser=None,
+    ):
         """Создать или получить посетителя"""
         session = self.get_session()
         try:
             if visitor_id:
-                visitor = session.query(Visitor).filter(Visitor.visitor_id == visitor_id).first()
+                visitor = (
+                    session.query(Visitor)
+                    .filter(Visitor.visitor_id == visitor_id)
+                    .first()
+                )
                 if visitor:
                     visitor.last_visit = datetime.utcnow()
                     session.commit()
                     return visitor.id
-            
+
             visitor_uuid = visitor_id or str(uuid.uuid4())
             visitor = Visitor(
                 visitor_id=visitor_uuid,
                 ip_address=ip_address,
                 user_agent=user_agent,
                 device_type=device_type,
-                browser=browser
+                browser=browser,
             )
             session.add(visitor)
             session.commit()
@@ -166,7 +212,7 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def create_user(self, username, email=None, phone=None):
         """Создать пользователя"""
         session = self.get_session()
@@ -180,7 +226,7 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def get_user(self, user_id):
         """Получить пользователя"""
         session = self.get_session()
@@ -188,16 +234,13 @@ class Database:
             return session.query(User).filter(User.id == user_id).first()
         finally:
             session.close()
-    
+
     def create_session(self, visitor_id=None, user_id=None, title=None, page_url=None):
         """Создать сессию"""
         session = self.get_session()
         try:
             chat_session = Session(
-                visitor_id=visitor_id,
-                user_id=user_id,
-                title=title,
-                page_url=page_url
+                visitor_id=visitor_id, user_id=user_id, title=title, page_url=page_url
             )
             session.add(chat_session)
             session.commit()
@@ -207,12 +250,14 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def end_session(self, session_id, satisfaction_rating=None):
         """Завершить сессию"""
         session = self.get_session()
         try:
-            chat_session = session.query(Session).filter(Session.id == session_id).first()
+            chat_session = (
+                session.query(Session).filter(Session.id == session_id).first()
+            )
             if chat_session:
                 chat_session.is_active = False
                 chat_session.ended_at = datetime.utcnow()
@@ -224,18 +269,21 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def get_session_messages(self, session_id):
         """Получить сообщения сессии"""
         session = self.get_session()
         try:
-            messages = session.query(Message).filter(
-                Message.session_id == session_id
-            ).order_by(Message.timestamp).all()
+            messages = (
+                session.query(Message)
+                .filter(Message.session_id == session_id)
+                .order_by(Message.timestamp)
+                .all()
+            )
             return messages
         finally:
             session.close()
-    
+
     def add_message(self, session_id, role, content, tokens_used=None):
         """Добавить сообщение"""
         session = self.get_session()
@@ -244,7 +292,7 @@ class Database:
                 session_id=session_id,
                 role=role,
                 content=content,
-                tokens_used=tokens_used
+                tokens_used=tokens_used,
             )
             session.add(message)
             session.commit()
@@ -254,7 +302,7 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def set_context(self, key, value, category=None):
         """Сохранить контекст"""
         session = self.get_session()
@@ -273,7 +321,7 @@ class Database:
             raise e
         finally:
             session.close()
-    
+
     def get_context(self, key):
         """Получить контекст"""
         session = self.get_session()
@@ -282,16 +330,45 @@ class Database:
             return context.value if context else None
         finally:
             session.close()
-    
-    def add_knowledge(self, question, answer, category=None, keywords=None):
+
+    def get_embedding(self, text):
+        """Получить эмбеддинг от DeepSeek API"""
+        if not self.deepseek_api_key:
+            return None
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {self.deepseek_api_key}',
+                'Content-Type': 'application/json'
+            }
+            data = {
+                'model': 'deepseek-chat',
+                'input': text,
+                'encoding_format': 'float'
+            }
+            response = requests.post(self.deepseek_api_url, headers=headers, json=data)
+            response.raise_for_status()
+            embedding = response.json()['data'][0]['embedding']
+            return embedding
+        except Exception as e:
+            print(f"Ошибка получения эмбеддинга: {e}")
+            return None
+
+    def add_knowledge(self, question, answer, category=None, keywords=None, auto_embed=True):
         """Добавить в базу знаний"""
         session = self.get_session()
         try:
+            # Получить эмбеддинг вопроса
+            embedding = None
+            if auto_embed:
+                embedding = self.get_embedding(question)
+            
             kb = KnowledgeBase(
-                question=question,
-                answer=answer,
-                category=category,
-                keywords=keywords
+                question=question, 
+                answer=answer, 
+                category=category, 
+                keywords=keywords,
+                embedding=embedding
             )
             session.add(kb)
             session.commit()
@@ -301,30 +378,67 @@ class Database:
             raise e
         finally:
             session.close()
-    
-    def search_knowledge(self, query, category=None, limit=5):
-        """Поиск в базе знаний"""
+
+    def search_knowledge(self, query, category=None, limit=5, use_vector=True):
+        """Поиск в базе знаний (векторный или текстовый)"""
         session = self.get_session()
         try:
+            # Попытка векторного поиска
+            if use_vector and self.deepseek_api_key:
+                query_embedding = self.get_embedding(query)
+                if query_embedding:
+                    return self.vector_search(query_embedding, category, limit, session)
+            
+            # Fallback на текстовый поиск
             q = session.query(KnowledgeBase).filter(KnowledgeBase.is_active == True)
             if category:
                 q = q.filter(KnowledgeBase.category == category)
             q = q.filter(
-                (KnowledgeBase.question.ilike(f'%{query}%')) |
-                (KnowledgeBase.keywords.ilike(f'%{query}%'))
+                (KnowledgeBase.question.ilike(f"%{query}%"))
+                | (KnowledgeBase.keywords.ilike(f"%{query}%"))
             )
             return q.order_by(KnowledgeBase.priority.desc()).limit(limit).all()
         finally:
             session.close()
     
-    def get_widget_settings(self, name='default'):
+    def vector_search(self, query_embedding, category=None, limit=5, session=None):
+        """Векторный поиск в базе знаний"""
+        close_session = False
+        if session is None:
+            session = self.get_session()
+            close_session = True
+        
+        try:
+            from sqlalchemy import text
+            
+            # Базовый запрос с косинусным расстоянием
+            query = session.query(
+                KnowledgeBase,
+                (1 - KnowledgeBase.embedding.cosine_distance(query_embedding)).label('similarity')
+            ).filter(KnowledgeBase.is_active == True)
+            
+            if category:
+                query = query.filter(KnowledgeBase.category == category)
+            
+            # Сортировка по схожести
+            results = query.order_by(
+                text('similarity DESC')
+            ).limit(limit).all()
+            
+            # Возвращаем только объекты KnowledgeBase
+            return [result[0] for result in results]
+        finally:
+            if close_session:
+                session.close()
+
+    def get_widget_settings(self, name="default"):
         """Получить настройки виджета"""
         session = self.get_session()
         try:
             return session.query(ChatWidget).filter(ChatWidget.name == name).first()
         finally:
             session.close()
-    
+
     def update_widget_settings(self, name, **kwargs):
         """Обновить настройки виджета"""
         session = self.get_session()
@@ -333,11 +447,11 @@ class Database:
             if not widget:
                 widget = ChatWidget(name=name)
                 session.add(widget)
-            
+
             for key, value in kwargs.items():
                 if hasattr(widget, key):
                     setattr(widget, key, value)
-            
+
             session.commit()
             return widget.id
         except Exception as e:
