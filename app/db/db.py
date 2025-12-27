@@ -14,8 +14,6 @@ from sqlalchemy.orm import sessionmaker, relationship
 from pgvector.sqlalchemy import Vector
 from datetime import datetime
 import uuid
-import os
-import requests
 
 Base = declarative_base()
 
@@ -155,8 +153,6 @@ class Database:
     ):
         self.engine = create_engine(db_url, echo=False)
         self.Session = sessionmaker(bind=self.engine)
-        self.deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
-        self.deepseek_api_url = "https://api.deepseek.com/v1/embeddings"
 
     def create_tables(self):
         """Создать все таблицы"""
@@ -331,44 +327,19 @@ class Database:
         finally:
             session.close()
 
-    def get_embedding(self, text):
-        """Получить эмбеддинг от DeepSeek API"""
-        if not self.deepseek_api_key:
-            return None
-        
-        try:
-            headers = {
-                'Authorization': f'Bearer {self.deepseek_api_key}',
-                'Content-Type': 'application/json'
-            }
-            data = {
-                'model': 'deepseek-chat',
-                'input': text,
-                'encoding_format': 'float'
-            }
-            response = requests.post(self.deepseek_api_url, headers=headers, json=data)
-            response.raise_for_status()
-            embedding = response.json()['data'][0]['embedding']
-            return embedding
-        except Exception as e:
-            print(f"Ошибка получения эмбеддинга: {e}")
-            return None
-
-    def add_knowledge(self, question, answer, category=None, keywords=None, auto_embed=True):
+    def add_knowledge(
+        self, question, answer, category=None, keywords=None, embedding=None
+    ):
         """Добавить в базу знаний"""
         session = self.get_session()
         try:
-            # Получить эмбеддинг вопроса
-            embedding = None
-            if auto_embed:
-                embedding = self.get_embedding(question)
-            
+
             kb = KnowledgeBase(
-                question=question, 
-                answer=answer, 
-                category=category, 
+                question=question,
+                answer=answer,
+                category=category,
                 keywords=keywords,
-                embedding=embedding
+                embedding=embedding,
             )
             session.add(kb)
             session.commit()
@@ -379,17 +350,10 @@ class Database:
         finally:
             session.close()
 
-    def search_knowledge(self, query, category=None, limit=5, use_vector=True):
-        """Поиск в базе знаний (векторный или текстовый)"""
+    def search_knowledge(self, query, category=None, limit=5):
+        """Поиск в базе знаний (текстовый)"""
         session = self.get_session()
         try:
-            # Попытка векторного поиска
-            if use_vector and self.deepseek_api_key:
-                query_embedding = self.get_embedding(query)
-                if query_embedding:
-                    return self.vector_search(query_embedding, category, limit, session)
-            
-            # Fallback на текстовый поиск
             q = session.query(KnowledgeBase).filter(KnowledgeBase.is_active == True)
             if category:
                 q = q.filter(KnowledgeBase.category == category)
@@ -400,31 +364,31 @@ class Database:
             return q.order_by(KnowledgeBase.priority.desc()).limit(limit).all()
         finally:
             session.close()
-    
+
     def vector_search(self, query_embedding, category=None, limit=5, session=None):
         """Векторный поиск в базе знаний"""
         close_session = False
         if session is None:
             session = self.get_session()
             close_session = True
-        
+
         try:
             from sqlalchemy import text
-            
+
             # Базовый запрос с косинусным расстоянием
             query = session.query(
                 KnowledgeBase,
-                (1 - KnowledgeBase.embedding.cosine_distance(query_embedding)).label('similarity')
+                (1 - KnowledgeBase.embedding.cosine_distance(query_embedding)).label(
+                    "similarity"
+                ),
             ).filter(KnowledgeBase.is_active == True)
-            
+
             if category:
                 query = query.filter(KnowledgeBase.category == category)
-            
+
             # Сортировка по схожести
-            results = query.order_by(
-                text('similarity DESC')
-            ).limit(limit).all()
-            
+            results = query.order_by(text("similarity DESC")).limit(limit).all()
+
             # Возвращаем только объекты KnowledgeBase
             return [result[0] for result in results]
         finally:
