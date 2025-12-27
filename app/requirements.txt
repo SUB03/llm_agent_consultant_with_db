@@ -1,0 +1,16 @@
+# Основные зависимости
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Для векторного поиска с pgvector
+pgvector>=0.2.0
+
+# Для API запросов (DeepSeek)
+requests>=2.31.0
+
+# Веб-фреймворк (опционально)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Дополнительно
+python-dotenv>=1.0.0

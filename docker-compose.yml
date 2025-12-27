@@ -1,0 +1,41 @@
+
+services:
+  vector_db:
+    image: pgvector/pgvector:pg16
+    container_name: web_assistant_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: web_assistant
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d web_assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  web_assistant:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: web_assistant_app
+    environment:
+      - DATABASE_URL=postgresql://user:password@vector_db:5432/web_assistant
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./app:/app
+    ports:
+      - "8001:8000"
+    depends_on:
+      vector_db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: tail -f /dev/null
+
+volumes:
+  postgres_data:
