@@ -13,8 +13,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Установка Python зависимостей
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install sentence-transformers
+# PyTorch CPU версия напрямую (без дополнительного индекса для совместимости)
+RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || \
+    pip install --no-cache-dir torch torchvision torchaudio
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
