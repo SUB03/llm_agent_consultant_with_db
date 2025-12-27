@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
@@ -11,12 +11,6 @@ WORKDIR /app
 
 # Копирование requirements
 COPY requirements.txt .
-
-# Установка Python зависимостей
-# PyTorch CPU версия напрямую (без дополнительного индекса для совместимости)
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || \
-    pip install --no-cache-dir torch torchvision torchaudio
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
 COPY . .
