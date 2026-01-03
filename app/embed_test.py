@@ -29,7 +29,6 @@ model.to(device)
 # )s
 
 
-
 # The queries and documents to embed
 queries = [
     "What is the developer name of this app?",
@@ -45,18 +44,25 @@ documents = [
 # Here we use the prompt called "query" stored under `model.prompts`, but you can
 # also pass your own prompt via the `prompt` argument
 logging.info('Encoding messages')
-test_query = "do you know developer name?"
+test_query = "give me something scientific"
 test_query_embedding = model.encode(test_query, prompt_name="query")
 query_embeddings = model.encode(queries, prompt_name="query")
 document_embeddings = model.encode(documents)
 
 print(f"test query embedding: {test_query_embedding}")
+print(f"query embedding: {query_embeddings}")
+print(f"document embedding: {document_embeddings}")
 
 logging.info('Adding to DB')
 faq_id = db.add_knowledge(
-    question=query_embeddings,
-    answer=document_embeddings,
-    category="Qwen3-Embedding-0.6B",
+    question=queries[0],
+    answer=documents[0],
+    embedding=document_embeddings[0].tolist(),
+)
+faq_id = db.add_knowledge(
+    question=queries[1],
+    answer=documents[1],
+    embedding=document_embeddings[1].tolist(),
 )
 print(f"FAQ добавлен с ID: {faq_id}")
 
@@ -67,6 +73,10 @@ print(f"FAQ добавлен с ID: {faq_id}")
 #         [0.1355, 0.6000]])
 
 logging.info('Search in DB')
-results = db.search_knowledge(test_query, use_vector=True)
-for kb in results:
-    print(f"- {kb.question}")
+results = db.vector_search(test_query_embedding)
+print("############################")
+print(results[0].answer)
+db.drop_tables()
+
+# for kb in results:
+#     print(f"- {kb.question}")
