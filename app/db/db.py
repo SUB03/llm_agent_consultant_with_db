@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Boolean,
     JSON,
+    text,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -158,7 +159,7 @@ class Database:
         """Создать все таблицы"""
         # Создать расширение pgvector если его нет
         with self.engine.connect() as conn:
-            conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
         Base.metadata.create_all(self.engine)
 
