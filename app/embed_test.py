@@ -11,7 +11,8 @@ load_dotenv()
 api_key = os.environ['DEEPSEEK_API_KEY']
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-db = Database('postgresql://user:password@localhost:5434/web_assistant') # TODO: Delete after Test
+db = Database('postgresql://user:password@vector_db:5432/web_assistant') # TODO: Delete after Test
+db.create_tables()
 
 # Load the model
 logging.info('Model initialization')
