@@ -40,7 +40,6 @@ documents = [
 ]
 
 
-
 # Encode the queries and documents. Note that queries benefit from using a prompt
 # Here we use the prompt called "query" stored under `model.prompts`, but you can
 # also pass your own prompt via the `prompt` argument
