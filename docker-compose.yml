@@ -25,7 +25,7 @@ services:
     container_name: web_assistant_app
     environment:
       - DATABASE_URL=postgresql://user:password@vector_db:5432/web_assistant
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+     # - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - PYTHONUNBUFFERED=1
     volumes:
       - ./app:/app

@@ -12,7 +12,6 @@ api_key = os.environ['DEEPSEEK_API_KEY']
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 db = Database('postgresql://user:password@localhost:5434/web_assistant') # TODO: Delete after Test
-
 # Load the model
 logging.info('Model initialization')
 device = 'cuda' if th.cuda.is_available() else 'cpu'
